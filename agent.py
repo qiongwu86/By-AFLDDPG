@@ -55,6 +55,7 @@ class DDPGAgent(object):
     def predict(self, s, isUpdateActor):
         # s = np.array(s)
         # s1 = np.reshape(s, (-1, 4))
+
         if isUpdateActor:
             noise = self.actor_noise()  # OU噪声
 

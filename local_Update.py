@@ -26,7 +26,20 @@ def modelRecovery(state_dict, model):
 def modelSnapshot(model):
     return model.state_dict()
 
+def asy_average_weights_weight(vehicle_idx, global_model, local_model, gamma, local_param2, local_param3):
+    # print("vehicle ", vehicle_idx + 1, " has already updated the RSU!")
 
+    for name, param in global_model.named_parameters():
+        for name2, param2 in local_model.named_parameters():
+            if name == name2:
+                param.data.copy_(gamma * param.data + (1 - gamma)  * local_param2 * local_param3 * param2.data)
+                # param.data.copy_(param.data + local_param1 * local_param2 * local_param3 * param2.data)
+
+    # print('#######################')
+    # print("Update decayed by factor beta_lt[i] , c_c[i]:", local_param2, local_param3)
+    # print("beta_lt[i] * c_c[i] is :", local_param2 * local_param3)
+    # print('#######################')
+    return global_model, global_model.state_dict()
 def get_dataset(args):
     if args.dataset == 'cifar':
         data_dir = 'data/cifar/'  #MNIST
@@ -149,7 +162,7 @@ class LocalUpdate(object):
                                 batch_size=int(len(idxs_test)/10), shuffle=False)
         return trainloader, validloader, testloader
 
-    def update_weights(self, model, global_round, index):
+    def update_weights(self, model, global_round, index,lt,blt,ct,bct):
         # Set mode to train model
         model.train()  # 设置模型为训练模式
         epoch_loss = []
@@ -170,6 +183,11 @@ class LocalUpdate(object):
 
         for iter in range(self.args.local_ep):
             batch_loss = []
+            if (lt > 5 and blt > 0.8) or (ct > 1 and bct > 0.8):
+                for parameters in model.parameters():
+                    with torch.no_grad():
+                        model_noise = torch.tensor(np.random.normal(0.01, 0.05, parameters.shape))
+                        parameters.add_(model_noise)  # 使用add_()方法将噪音添加到参数上
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 images, labels = images.to(self.device), labels.to(self.device)
                 # 梯度
@@ -177,7 +195,9 @@ class LocalUpdate(object):
                 # 训练预测
                 log_probs = model(images)
                 # 计算损失函数
+
                 loss = self.criterion(log_probs, labels)     # 损失函数 self.criterion(output, target)
+
                 # 反向传播
                 loss.backward()
                 # 更新参数
@@ -272,7 +292,7 @@ class LocalUpdate(object):
 
         # if index != 4 and index != 2 and index !=0:
 
-        if index != 4 and index != 2:
+        if index != 2  :
             for iter in range(self.args.local_ep):
                 batch_loss = []
 
@@ -295,8 +315,8 @@ class LocalUpdate(object):
                     batch_loss.append(loss.item())
                 epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
-        # if index == 0 or index ==1:
-        if index ==2 or index ==4:
+        #data flip：
+        if index ==2:
             for iter in range(self.args.local_ep):
                 batch_loss = []
 
@@ -306,9 +326,9 @@ class LocalUpdate(object):
                     model.zero_grad()
 
                     # 训练预测( output = model(input) )
-                    log_probs = model(1-images)
+                    log_probs = model(images)
                     # 计算损失函数
-                    loss = self.criterion(log_probs, labels)  # 损失函数 self.criterion(output, target)
+                    loss = self.criterion(log_probs, 9-labels)  # 损失函数 self.criterion(output, target)
 
                     # 反向传播,得到每一个要更新的参数的梯度
                     loss.backward()
@@ -319,6 +339,30 @@ class LocalUpdate(object):
                     batch_loss.append(loss.item())
                 epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
+
+        # #class flip：
+        # if index ==2 or index==1 or index==0:
+        #     for iter in range(self.args.local_ep):
+        #         batch_loss = []
+        #
+        #         for batch_idx, (images, labels) in enumerate(self.trainloader):
+        #             images, labels = images.to(self.device), labels.to(self.device)
+        #             # 梯度
+        #             model.zero_grad()
+        #
+        #             # 训练预测( output = model(input) )
+        #             log_probs = model(images)
+        #             # 计算损失函数
+        #             loss = self.criterion(log_probs, 9-labels)  # 损失函数 self.criterion(output, target)
+        #
+        #             # 反向传播,得到每一个要更新的参数的梯度
+        #             loss.backward()
+        #             # 更新参数(每一个参数都会根据反向传播得到的梯度进行优化)
+        #             # optimizer.step()
+        #
+        #             self.logger.add_scalar('loss', loss.item())
+        #             batch_loss.append(loss.item())
+        #         epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
 
 

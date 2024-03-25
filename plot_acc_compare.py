@@ -6,35 +6,35 @@ import matplotlib.pyplot as plt
 names = ['1', '2', '3', '4', '5', '6', '7','8','9','10']
 x = range(len(names))
 # x = range(,10)
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 显示汉字
+# plt.rcParams['font.sans-serif'] = ['SimHei']  # 显示汉字
 
-
-y_14 = [0.8412, 0.9219, 0.9398, 0.9465, 0.9528, 0.9543, 0.9578, 0.9579, 0.9634, 0.9642]  # AFL_weight
-y_24 = [0.8369, 0.9178, 0.9311, 0.9379, 0.9475, 0.9518, 0.9558, 0.9545, 0.9612, 0.9608]  # AFL
-y_34 = [0.6397, 0.8527, 0.8952, 0.9092, 0.9276, 0.9333, 0.9424, 0.9480, 0.9501, 0.9525]  # FL
-# plt.plot(x, y_14, color='orangered', marker='o', linestyle='-', label='本文方案')
-# plt.plot(x, y_24, color='blueviolet', marker='D', linestyle='-.', label='DDPG选择节点下的传统异步联邦方案')
-# plt.plot(x, y_34, color='green', marker='*', linestyle=':', label='DDPG选择节点下的传统联邦方案')
-
-plt.plot(x, y_14, color='orangered', marker='o', linestyle='-', label='our scheme')
-plt.plot(x, y_24, color='blueviolet', marker='D', linestyle='-.', label='DDPG with traditional AFL')
-plt.plot(x, y_34, color='green', marker='*', linestyle=':', label='DDPG with traditional FL')
-
-plt.legend()  # 显示图例
-# plt.xticks(x, names, rotation=45)
+#
+# y_14 = [0.8412, 0.9219, 0.9398, 0.9465, 0.9528, 0.9543, 0.9578, 0.9579, 0.9634, 0.9642]  # AFL_weight
+# y_24 = [0.8369, 0.9178, 0.9311, 0.9379, 0.9475, 0.9518, 0.9558, 0.9545, 0.9612, 0.9608]  # AFL
+# y_34 = [0.6397, 0.8527, 0.8952, 0.9092, 0.9276, 0.9333, 0.9424, 0.9480, 0.9501, 0.9525]  # FL
+# # plt.plot(x, y_14, color='orangered', marker='o', linestyle='-', label='本文方案')
+# # plt.plot(x, y_24, color='blueviolet', marker='D', linestyle='-.', label='DDPG选择节点下的传统异步联邦方案')
+# # plt.plot(x, y_34, color='green', marker='*', linestyle=':', label='DDPG选择节点下的传统联邦方案')
+#
+# plt.plot(x, y_14, color='orangered', marker='o', linestyle='-', label='our scheme')
+# plt.plot(x, y_24, color='blueviolet', marker='D', linestyle='-.', label='DDPG with traditional AFL')
+# plt.plot(x, y_34, color='green', marker='*', linestyle=':', label='DDPG with traditional FL')
+#
+# plt.legend()  # 显示图例
+# # plt.xticks(x, names, rotation=45)
+# # plt.xticks(x, names)
 # plt.xticks(x, names)
-plt.xticks(x, names)
-# plt.xlabel("步数")  # X轴标签
-# plt.ylabel("精度")  # Y轴标签
-
-plt.xlabel("number of step")  # X轴标签
-plt.ylabel("accuracy")  # Y轴标签
-
-plt.show()
-
+# # plt.xlabel("步数")  # X轴标签
+# # plt.ylabel("精度")  # Y轴标签
+#
+# plt.xlabel("number of step")  # X轴标签
+# plt.ylabel("accuracy")  # Y轴标签
+#
+# plt.show()
 
 
-y_1 = [1.7168, 0.8660, 0.6458, 0.5460, 0.4765, 0.4429, 0.4130, 0.3918, 0.3667, 0.3423]  # AFL_weight
+
+y_1 = [1.6568, 0.857782, 0.6168, 0.51871, 0.465, 0.415740, 0.4095, 0.3811, 0.347, 0.34820902]  # AFL_weight
 y_2 = [1.7817, 0.9289, 0.6980, 0.5896, 0.5155, 0.4586, 0.4225, 0.3927, 0.3701, 0.3477] # AFL
 y_3 = [2.1304, 1.4598, 1.0218, 0.8407, 0.7039, 0.6588, 0.5748, 0.5509, 0.4993, 0.4604]  # FL
 # plt.plot(x, y_1, color='orangered', marker='o', linestyle='-', label='本文方案')

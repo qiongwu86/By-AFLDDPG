@@ -103,7 +103,7 @@ class MecTerm(object):
     def D_size(self):
         for i in range(args.num_users):
             self.d_size[i] = 1000 + 300 * i
-        self.d_size[3] = 100
+       # self.d_size[3] = 200
         return self.d_size
 
     # 车辆初始坐标位置
@@ -195,7 +195,7 @@ class MecTerm(object):
         lower, upper = mu1 - 2 * sigma1, mu1 + 2 * sigma1  # 截断在[μ-2σ, μ+2σ]
         x = stats.truncnorm((lower - mu1) / sigma1, (upper - mu1) / sigma1, loc=mu1, scale=sigma1)
         self.delta = x.rvs(args.num_users)  # 总共得到每辆车的计算资源，车辆数目为clients_num来控制
-        self.delta[3] = 10
+        #self.delta[3] = 1e8
         # print("self.delta:", self.delta)
         return self.delta
 
@@ -249,6 +249,7 @@ class MecTerm(object):
         # self.l_c = [0] * args.num_users
         for i in range(args.num_users):
             self.l_c[i] = self.d_size[i] * 1e6 / self.delta[i]
+        #self.l_c[3] = self.d_size[3] * 1e6 / self.delta[i]
         print('self.l_c is:', self.l_c)
         return self.l_c
 
@@ -435,21 +436,21 @@ class MecTermRL(MecTerm):
         # self.Reward = -sum(bb)   # 对应奖励公式
 
         a1 = np.array(self.l_c)
-        print("a1=self.l_c=", a1)
+       # print("a1=self.l_c=", a1)
         b1 = np.array(self.c_c)
-        print("b1=self.c_c=", b1)
+      #  print("b1=self.c_c=", b1)
         c1 = a1 + b1
-        print("c1=a1 + b1=", c1)
+        #print("c1=a1 + b1=", c1)
         bb = np.multiply(c1, PP_lamda1)
-        print(" bb = np.multiply(c1, PP_lamda1) = ", bb)
-        print("sum(bb) / sum(PP_lamda1) :", sum(bb) / sum(PP_lamda1))
+        #print(" bb = np.multiply(c1, PP_lamda1) = ", bb)
+       # print("sum(bb) / sum(PP_lamda1) :", sum(bb) / sum(PP_lamda1))
         # print("localloss:", localloss)
         # print("self.P_Lamda * localloss:", self.P_Lamda * localloss)
         # print("sum(bb):", sum(bb))
         # print("sum(self.P_Lamda * localloss)", sum(self.P_Lamda * localloss))
         # self.Reward = (-sum(bb) - 50*AFL_loss) / sum(PP_lamda1)
         self.Reward = -(AFL_loss + sum(bb) / sum(PP_lamda1) / 3) / (sum(self.P_Lamda)/len(self.P_Lamda))
-        print("self.Reward = -AFL_loss - sum(bb) / sum(PP_lamda1) / 3")
+       # print("self.Reward = -AFL_loss - sum(bb) / sum(PP_lamda1) / 3")
         print("step reward is :", self.Reward)
 
         ######
@@ -470,7 +471,7 @@ class MecTermRL(MecTerm):
             self.dis_norm1[i] = float(self.dis[i] - np.min(self.dis)) / (np.max(self.dis) - np.min(self.dis))
 
         self.next_state = np.array([self.tr_norm1, self.delta_norm1, self.dis_norm1, self.P_lamda])  # 定义下一状态更新
-        print("self.next_state is :", self.next_state)
+        #print("self.next_state is :", self.next_state)
         # print("这句话前面")
         # self.next_state = np.array([self.tr, self.delta, self.dis, self.P_lamda])  # 定义下一状态更新
         # print("执行这句话了")
@@ -493,10 +494,10 @@ class MecTermRL(MecTerm):
 
     def AgentUpdate(self, done):
         # 往replaybuffer加动作状态，到达一定数量更新它和神经网络：
-        print("self.isUpdateActor is :", self.isUpdateActor)
+        #print("self.isUpdateActor is :", self.isUpdateActor)
         self.agent.update(self.State, self.P_lamda, self.Reward, done, self.next_state, self.isUpdateActor)
-        print("self.State is :", self.State)
-        print("self.next_state is:", self.next_state)
+        #print("self.State is :", self.State)
+       # print("self.next_state is:", self.next_state)
         self.State = self.next_state
 
 

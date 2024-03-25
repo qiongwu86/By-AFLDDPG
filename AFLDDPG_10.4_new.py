@@ -13,7 +13,8 @@ from scipy.constants import pi
 import torch
 from tensorboardX import SummaryWriter
 
-from local_Update import LocalUpdate, test_inference, get_dataset, average_weights, exp_details, asy_average_weights
+from local_Update import LocalUpdate, test_inference, get_dataset, average_weights, exp_details, asy_average_weights, \
+    asy_average_weights_weight
 from local_model import MLP, CNNMnist, CNNFashion_Mnist, CNNCifar
 from sampling import mnist_iid, mnist_noniid, mnist_noniid_unequal, cifar_iid, cifar_noniid
 
@@ -54,7 +55,7 @@ device = 'cuda' if args.gpu else 'cpu'
 
 # DDPG相关设置
 tf.compat.v1.reset_default_graph()
-MAX_EPISODE = 2
+MAX_EPISODE = 1000
 MAX_EPISODE_LEN = 5
 NUM_R = args.num_users  # 天线数，跟信道数有关
 
@@ -113,7 +114,7 @@ env.init_target_network()  # 初始化target网络
 
 res_r = []
 res_p = []
-
+tracc111 = []
 
 
 
@@ -179,7 +180,102 @@ for ep in tqdm(range(MAX_EPISODE)):  # (多少个episode)
 
     # 开始step
     tsacc1 = []
+    AFL_loss1 = []
     print("the number of episode(ep):", ep)
+    lampda=2
+
+    # 计算本地更新权重比例：
+
+    # 每辆车可用计算资源delta
+    mu1, sigma1 = 1.5e+9, 1e+8
+    lower, upper = mu1 - 2 * sigma1, mu1 + 2 * sigma1  # 截断在[μ-2σ, μ+2σ]
+    x = stats.truncnorm((lower - mu1) / sigma1, (upper - mu1) / sigma1, loc=mu1, scale=sigma1)
+    delta = x.rvs(args.num_users)  # 总共得到每辆车的计算资源，车辆数目为clients_num来控制
+    delta[3] = 1e8
+    print("delta is :", delta)
+    # delta = [0] * args.num_users
+    # for i in range(args.num_users):
+    #     delta[i] = 1e+9 * 1.5 * (0.1*i + 1.5)
+
+    # 本地计算时间比例
+
+    CPUcycles = 1e+6  # 10^6
+    kexi = 0.9
+    localtime = [0] * args.num_users
+    beta_lt = [0] * args.num_users
+    for i in range(args.num_users):
+        localtime[i] = (1000 + 300 * i) * CPUcycles / delta[i] - 0.5
+        localtime[3] = 200 * CPUcycles / delta[i] - 0.5
+    print('localtime is ', localtime)
+    for i in range(args.num_users):
+        beta_lt[i] = kexi ** localtime[i]
+    print('beta_lt is:', beta_lt)
+
+
+    # 进行AR信道建模
+    def complexGaussian1(row=1, col=1, amp=1.0):
+        real = np.random.normal(size=[row, col])[0] * np.sqrt(0.5)
+        # np.random.normal(size=[row,col])生成数据2维，第一维度包含row个数据，每个数据中又包含col个数据
+        # np.sqrt(A)求A的开方
+        img = np.random.normal(size=[row, col])[0] * np.sqrt(0.5)
+        return amp * (real + 1j * img)  # amp相当于系数，后面计算时替换成了根号下1-rou平方    (real + 1j*img)即为误差向量e(t)
+
+
+    aaa = complexGaussian1(1, 1)[0]
+    H1 = [aaa] * args.num_users
+
+    # 车辆x轴坐标位置
+    alpha = 2
+    path_loss = [0] * args.num_users
+    dis = [0] * args.num_users
+    for i in range(args.num_users):  # i从 0 - (args.num_users-1)
+        dis[i] = -500 + 50 * i  # 车辆初始位置
+        path_loss[i] = 1 / np.power(np.linalg.norm(dis[i]), alpha)
+
+    # 计算ρi
+    Hight_RSU = 10
+    width_lane = 5
+    velocity = 20
+    lamda = 7
+    x_0 = np.array([1, 0, 0])
+    P_B = np.array([0, 0, Hight_RSU])
+    P_m = [0] * args.num_users
+    rho = [0] * args.num_users
+    for i in range(args.num_users):
+        P_m[i] = np.array([dis[i], width_lane, Hight_RSU])
+        rho[i] = sp.j0(2 * pi * velocity * np.dot(x_0, (P_B - P_m[i])) / (np.linalg.norm(P_B - P_m[i]) * lamda))
+
+    # 计算H信道增益
+    for i in range(args.num_users):
+        # H1[i] = rho[i] * H1[i] + complexGaussian(1, 1, np.sqrt(1 - rho[i] * rho[i]))
+        H1[i] = rho[i] * H1[i] + complexGaussian(1, 1, np.sqrt(1 - rho[i] * rho[i]))[0]
+        ddd = abs(H1[i])
+
+    # 计算传输速率
+    # transpower = 100  # mW
+    # sigma2 = 1e-11
+    transpower = 250
+    # bandwidth = 1e+5  # HZ
+    sigma2 = 1e-9
+    bandwidth = 1e+3  # HZ
+    tr1 = [0] * args.num_users
+    sinr1 = [0] * args.num_users
+    for i in range(args.num_users):
+        sinr1[i] = transpower * abs(H1[i]) * path_loss[i] / sigma2  # abs()即可求绝对值，也可以求复数的模 #因为神经网络里输入的值不能为复数
+        tr1[i] = np.log2(1 + sinr1[i]) * bandwidth
+
+    # 时隙t车辆i的通信时间,w_size为t时隙所学习的本地模型参数的大小，tr传输速率
+    w_size = 5000  # 本地模型参数大小（5kbits）(香农公式传输速率单位为bit/s)
+    c_c = [0] * args.num_users
+    for i in range(args.num_users):
+        c_c[i] = w_size / tr1[i] - 0.5
+
+    beta_ct = [0] * args.num_users
+    epuxilong = 0.9
+    for i in range(args.num_users):
+        beta_ct[i] = epuxilong ** c_c[i]
+
+    #########################
 
     for j in range(MAX_EPISODE_LEN):
 
@@ -196,8 +292,25 @@ for ep in tqdm(range(MAX_EPISODE)):  # (多少个episode)
         # # 得到选择概率最大的那辆车的索引（序号）（因为索引从0开始,而车辆编号索引也为从0开始，故不用+1）
         # mx = np.argmax(xxx)
         # # print("max_index is", mx)
+        # # 每个step开始，RSU处的计算的参考模型更新一次
+        server_model = LocalUpdate(args=args, dataset=trdata, idxs=usgrp[1], logger=logger)  # 先暂时将测试样本数定为用第五个用户的数据量大小
+        s_w, s_loss, s_model = server_model.update_weights(model=copy.deepcopy(glmodel), global_round=ep, index=j)
+        print('server loss is:', s_loss)
+        locloss = []
+        for each in user_id:
+            local_net = copy.deepcopy(vehicle_model[each])
+            local_net.to(device)
+            locmdl = LocalUpdate(args=args, dataset=trdata, idxs=usgrp[each], logger=logger)
+            w, loss, localmodel = locmdl.asyupdate_weights(model=copy.deepcopy(glmodel), global_round=ep, index=each)
+            locloss.append(loss)
+
+
 
         # 2.从列表中随机抽样选择车辆：
+
+
+
+
         P_lamda1 = user_list[i].predict(True)
         print("P_lamda1 is:", P_lamda1)
         P_lamda11 = [0] * args.num_users
@@ -205,6 +318,22 @@ for ep in tqdm(range(MAX_EPISODE)):  # (多少个episode)
         for qqq in range(args.num_users):
             P_lamda11[qqq] = float(P_lamda1[qqq] - np.min(P_lamda1)) / (np.max(P_lamda1) - np.min(P_lamda1))
         print("归一化后的P_lamda1即P_lamda11为：",  P_lamda11)
+        P_lamda11xx=P_lamda11
+        for qqq in range(args.num_users):
+            if locloss[qqq] > lampda * s_loss:
+                P_lamda11xx[qqq]=0
+        print('P_lamda11xx:',P_lamda11xx)
+        xxxx = 0
+
+
+        #防止一辆车都没选中
+        for each in P_lamda11xx:
+            if each < 0.5:
+                xxxx=xxxx+1
+        if xxxx==5:
+            print('没选中')
+            P_lamda11xx=[0,1,0,0,0]
+
 
         # ## 随机抽样选择一辆车进行训练
         # xxx = P_lamda1.tolist()
@@ -221,23 +350,33 @@ for ep in tqdm(range(MAX_EPISODE)):  # (多少个episode)
         # 全部车进行本地loss计算
         locloss = []
         for aa in user_id:
-            if P_lamda11[aa] >= 0.5:
+            if P_lamda11xx[aa] >= 0.5:
                 local_net = copy.deepcopy(vehicle_model[aa])
                 local_net.to(device)
                 locmdl = LocalUpdate(args=args, dataset=trdata, idxs=usgrp[aa], logger=logger)
-                w, loss, localmodel = locmdl.asyupdate_weights(model=copy.deepcopy(glmodel), global_round=ep)
-                # locloss[aa] = copy.deepcopy(loss)
+                w, loss, localmodel = locmdl.asyupdate_weights(model=copy.deepcopy(glmodel), global_round=ep,index=aa)
                 locloss.append(loss)
                 # print("locloss :", locloss)
                 # print("finished computing loss with vehicle:",aa)
 
                 # 被选中的那辆车进行全局模型更新
-                glmodel, glweights = asy_average_weights(vehicle_idx=aa, global_model=glmodel, local_model=localmodel,
-                                                         gamma=args.gamma)
+                glmodel, glweights = asy_average_weights_weight(vehicle_idx=aa, global_model=glmodel,
+                                                                local_model=localmodel,
+                                                                gamma=args.gamma, local_param2=beta_lt[aa],
+                                                                local_param3=beta_ct[aa])
                 print("vehicle aa has updated global model: aa 为：", aa)
         print("locloss is :", locloss)
         avg_loss = sum(locloss) / len(locloss)
+        # if len(locloss)!=0:
+        #     avg_loss = sum(locloss) / len(locloss)
+        # else:
+        #     print('没有车辆被选中，取avg_loss = 2.5')
+        #     avg_loss = 2.5
+
+
+
         print("avg_loss is :", avg_loss)
+        AFL_loss1.append(avg_loss)
         # 全部训练完后把最终训练好的全局模型发给所有车辆（下一个step同样起跑线）
         for iz in range(args.num_users):
             vehicle_model[iz] = copy.deepcopy(glmodel)
@@ -248,7 +387,23 @@ for ep in tqdm(range(MAX_EPISODE)):  # (多少个episode)
         for ia in range(args.num_users):
             if P_lamda11[ia] >= 0.5:
                 PP_lamda[ia] = 1
+            else:
+                PP_lamda[ia] = 0
+        if xxxx==5:
+            PP_lamda=[0,1,0,0,0]
+        # if PP_lamda == [0,0,0,0,0]:
+        #     PP_lamda=[0,1,0,0,0]
         print("离散化后的动作即PP_lamda is :", PP_lamda)
+
+        epacc11, eploss11 = [], []
+        glmodel.eval()
+        for q in range(args.num_users):
+            locmdl = LocalUpdate(args=args, dataset=trdata,
+                                 idxs=usgrp[q], logger=logger)
+            acc, loss = locmdl.inference(model=glmodel)
+            epacc11.append(acc)
+            eploss11.append(loss)
+        tracc111.append(sum(epacc11) / len(epacc11))
 
         # 每个step后计算测试精度和loss(loss为一个step里AFL完的全局模型的loss)
         tsacc, tsloss = test_inference(args, glmodel, tsdata)
@@ -281,13 +436,16 @@ for ep in tqdm(range(MAX_EPISODE)):  # (多少个episode)
 
     # 每个epi后画个精度图(每个epi的RSU处全局模型精度变化图)
     # Plot curve
-    plt.figure()
-    plt.title('acc of each epoch')
-    plt.plot(range(MAX_EPISODE_LEN), tsacc1, color='b')  # 横轴是epi数，纵轴是每个epi中平均每一step的奖励（每一步的平均奖励）
-    plt.ylabel('acc')
-    plt.xlabel('Num of steps')
-    plt.savefig('acc_{}_ep={}.png'.format(time.time(), ep))
-
+    if ep%10==0:
+        plt.figure()
+        plt.title('acc of each epoch')
+        plt.plot(range(MAX_EPISODE_LEN), tsacc1, color='b')  # 横轴是epi数，纵轴是每个epi中平均每一step的奖励（每一步的平均奖励）
+        plt.ylabel('acc')
+        plt.xlabel('Num of steps')
+        plt.savefig('acc_{}_ep={}.png'.format(time.time(), ep))
+    print("step test acc 即 tsacc1 is ", tsacc1)
+    print("step train acc 即 tracc111 is ", tracc111)
+    print('AFL_loss1 is :', AFL_loss1)
 
     # for m in range(args.num_users):
     #     cur_p_ep[m] += cur_p[m]
